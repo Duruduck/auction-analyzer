@@ -1,0 +1,32 @@
+name: 주간 경매 스크리닝
+
+on:
+  schedule:
+    - cron: '0 0 * * 5'  # 매주 금요일 오전 9시 KST (UTC 00:00)
+  workflow_dispatch:       # 수동 실행 버튼
+
+jobs:
+  screen:
+    runs-on: ubuntu-latest
+    permissions:
+      issues: write
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Python 설정
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: 의존성 설치
+        run: |
+          pip install requests beautifulsoup4 playwright
+          playwright install chromium
+          playwright install-deps chromium
+
+      - name: 스크리닝 실행
+        run: python screening/scraper.py
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_REPO: ${{ github.repository }}
