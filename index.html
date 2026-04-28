@@ -1,0 +1,615 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>경매 투자 분석기</title>
+  <script src="https://unpkg.com/react@18/umd/react.development.js" crossorigin></script>
+  <script src="https://unpkg.com/react-dom@18/umd/react-dom.development.js" crossorigin></script>
+  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { background: #0a0a0f; }
+    input[type=range] { width: 100%; }
+  </style>
+</head>
+<body>
+  <div id="root"></div>
+  <script type="text/babel" data-presets="react">
+    const { useState, useMemo } = React;
+
+    function parsePrice(str) {
+      if (!str) return 0;
+      str = str.replace(/\s|,/g, "");
+      let t = 0;
+      const e = str.match(/(\d+)억/), m = str.match(/(\d+)만/);
+      const w = str.match(/억.*?(\d+)원$/) || str.match(/만.*?(\d+)원$/) || (!e && !m && str.match(/^(\d+)원?$/));
+      if (e) t += parseInt(e[1]) * 100000000;
+      if (m) t += parseInt(m[1]) * 10000;
+      if (w?.[1] && parseInt(w[1]) < 10000) t += parseInt(w[1]);
+      if (t === 0) { const r = str.match(/(\d{5,})/); if (r) t = parseInt(r[1]); }
+      return t;
+    }
+    function fp(n) {
+      if (!n && n !== 0) return "-";
+      const abs = Math.abs(n);
+      let s;
+      if (abs >= 100000000) { const e = Math.floor(abs/1e8), m = Math.round((abs%1e8)/10000); s = m > 0 ? `${e}억 ${m.toLocaleString()}만` : `${e}억`; }
+      else if (abs >= 10000) s = `${Math.round(abs/10000).toLocaleString()}만`;
+      else s = abs.toLocaleString();
+      return (n < 0 ? "-" : "") + s + "원";
+    }
+    function fmtPct(r) { return `${r >= 0 ? "+" : ""}${r.toFixed(1)}%`; }
+    function pct(r) { return `${(r * 100).toFixed(1)}%`; }
+
+    const ADJUSTED_ZONES = ["서울특별시","서울시","서울 ","경기 과천","과천시","경기 성남","성남시 분당","성남시 수정","성남 분당","성남 수정","경기 하남","하남시","경기 광명","광명시","세종특별자치시","세종시"];
+    function detectAdjustedZone(address) {
+      if (!address) return { isAdjusted: false, reason: "" };
+      for (const zone of ADJUSTED_ZONES) {
+        if (address.includes(zone)) return { isAdjusted: true, reason: zone.trim() };
+      }
+      return { isAdjusted: false, reason: "" };
+    }
+
+    function parseMadangs(text) {
+      const has = kw => text.includes(kw);
+      const find = re => text.match(re);
+      const addrM = find(/서울[^\n]{5,60}호/) || find(/경기[^\n]{5,60}호/) || find(/인천[^\n]{5,60}호/) || find(/부산[^\n]{5,60}호/) || find(/대구[^\n]{5,60}호/);
+      const address = addrM ? addrM[0].trim().replace(/\s+/g, " ") : "";
+      let propertyType = "다세대";
+      if (has("아파트")) propertyType = "아파트";
+      else if (has("오피스텔")) propertyType = "오피스텔";
+      else if (has("상가")) propertyType = "상가";
+      else if (has("토지")) propertyType = "토지";
+      else if (has("빌라")) propertyType = "빌라";
+      const apm = find(/감정가\s*\n?\s*([\d,억만원]+)/); const appraisalPrice = apm ? parsePrice(apm[1]) : 0;
+      const minm = find(/최저가\s*\n?\s*([\d,억만원]+)/); const minimumBidPrice = minm ? parsePrice(minm[1]) : 0;
+      const fm = find(/유찰\s*(\d+)회/); const failedBidCount = fm ? parseInt(fm[1]) : 0;
+      const isReAuction = has("재매각");
+      let auctionType = ""; if (has("강제경매")) auctionType = "강제경매"; else if (has("임의경매")) auctionType = "임의경매";
+      const bldM = find(/건물\s*([\d.]+)㎡[^(]*\(([\d.]+)평\)/);
+      const areaSqm = bldM ? parseFloat(bldM[1]) : 0;
+      const areaPy = bldM ? parseFloat(bldM[2]) : 0;
+      const floorM = find(/(\d+)층\d+호/) || find(/(\d+)층/); const floor = floorM ? parseInt(floorM[1]) : null;
+      const hasElevator = has("승강기") || has("엘리베이터");
+      const yearM = find(/(\d{4})년.*?준공/) || find(/사용승인.*?(\d{4})년/);
+      const builtYear = yearM ? parseInt(yearM[1]) : null;
+      const buildingAge = builtYear ? new Date().getFullYear() - builtYear : null;
+      const inheritedRights = has("매수인이 인수") || has("인수함");
+      const im = find(/([^\n]*매수인이 인수[^\n]*)/);
+      const inheritedRightsDescription = im ? im[1].trim() : "";
+      const hasLienClaim = has("유치권"); const hasLegalSurfaceRight = has("법정지상권");
+      const hasRentReg = has("임차권등기") || has("임차권설정");
+      const hasSenior = has("선순위임차인") || has("선순위 임차인");
+      const wavedRes = has("대항력 포기") || has("대항력포기");
+      const wavedDiv = has("배당 포기") || has("배당포기");
+      const reqDiv = has("배당요구");
+      const deps = [...text.matchAll(/보증[금:：]?\s*:?\s*([\d,억만원]+)/g)].map(m => parsePrice(m[1])).filter(v => v > 1000000);
+      const tenants = deps.map(deposit => ({ deposit, hasResistanceRight: hasSenior || hasRentReg, wavedResistanceRight: wavedRes, wavedRentRight: wavedRes, wavedDividend: wavedDiv, requestedDividend: reqDiv, rentRegistration: hasRentReg }));
+      const registrations = [];
+      [...text.matchAll(/가압류[^0-9]*([0-9,]+)원/g)].forEach(m => registrations.push({ type: "가압류", amount: parseInt(m[1].replace(/,/g, "")) }));
+      let occupantType = "미상"; if (has("소유자") && has("점유")) occupantType = "소유자"; else if (has("임차인")) occupantType = "임차인";
+      const um = find(/미납[관리비]*\s*([\d,억만원]+)/);
+      return { address, propertyType, appraisalPrice, minimumBidPrice, failedBidCount, isReAuction, auctionType, areaSqm, areaPy, floor, hasElevator, buildingAge, builtYear, tenants, registrations, inheritedRights, inheritedRightsDescription, hasLienClaim, hasLegalSurfaceRight, occupantType, unpaidManagementFee: um ? parsePrice(um[1]) : 0 };
+    }
+
+    const STAT_RATES = {
+      서울:   { 아파트:[96,91,86,81,76,71,64,58,53], 다세대:[88,82,77,72,67,62,56,51,46], 빌라:[87,81,76,71,66,61,55,50,45], 오피스텔:[85,79,74,69,64,60,54,49,44], 상가:[79,73,67,62,58,53,48,44,40], 토지:[82,76,70,65,60,56,51,47,43] },
+      수도권: { 아파트:[91,85,80,75,70,65,58,53,48], 다세대:[82,76,71,66,61,57,51,46,42], 빌라:[81,75,70,65,60,56,50,45,41], 오피스텔:[79,74,68,64,59,55,49,45,40], 상가:[73,67,62,57,52,48,43,39,36], 토지:[76,70,65,60,55,51,46,42,38] },
+      지방:   { 아파트:[84,78,73,68,63,58,52,47,43], 다세대:[74,68,63,58,54,50,45,41,37], 빌라:[73,67,62,57,53,49,44,40,36], 오피스텔:[72,66,61,57,52,48,43,39,36], 상가:[67,61,56,51,47,44,39,36,33], 토지:[70,64,59,54,50,46,42,38,35] },
+    };
+    const STAT_STD = { 아파트:5, 다세대:7, 빌라:7, 오피스텔:6, 상가:10, 토지:12 };
+
+    function detectRegion(address) {
+      if (!address) return "지방";
+      if (address.startsWith("서울")) return "서울";
+      if (address.startsWith("경기") || address.startsWith("인천")) return "수도권";
+      return "지방";
+    }
+    function failedIdx(n) {
+      if (n <= 0) return 0; if (n === 1) return 1; if (n === 2) return 2;
+      if (n === 3) return 3; if (n === 4) return 4; if (n <= 6) return 5;
+      if (n <= 9) return 6; if (n <= 14) return 7; return 8;
+    }
+
+    function calcBidEstimate(d, rightsScore, evictionScore) {
+      const region = detectRegion(d.address);
+      const type = d.propertyType;
+      const rates = (STAT_RATES[region]?.[type] || STAT_RATES["지방"]["다세대"]);
+      const baseRate = rates[failedIdx(d.failedBidCount)] / 100;
+      const std = (STAT_STD[type] || 8) / 100;
+      const adjs = []; let totalAdj = 0;
+      const addAdj = (label, adj, reason) => { totalAdj += adj; adjs.push({ label, adj, reason }); };
+      if (rightsScore >= 90) addAdj("권리 위험도 우수 (90점+)", +3, "입찰자 신뢰도 높음");
+      else if (rightsScore >= 70) addAdj("권리 위험도 양호 (70~89점)", +1, "비교적 안전");
+      else if (rightsScore >= 50) addAdj("권리 위험도 보통 (50~69점)", 0, "일반적 수준");
+      else if (rightsScore >= 30) addAdj("권리 위험도 높음 (30~49점)", -5, "입찰자 기피");
+      else addAdj("권리 위험도 심각 (0~29점)", -12, "극도 기피");
+      if (evictionScore >= 80) addAdj("명도 용이 (80점+)", +2, "즉시 입주 가능");
+      else if (evictionScore >= 60) addAdj("명도 보통 (60~79점)", 0, "일반적 수준");
+      else if (evictionScore >= 40) addAdj("명도 어려움 (40~59점)", -3, "비용/기간 부담");
+      else addAdj("명도 매우 어려움 (40점-)", -7, "분쟁 가능성 높음");
+      if (d.inheritedRights) addAdj("인수권리 존재", -15, "실질 비용 증가");
+      if (d.hasLienClaim) addAdj("유치권 신고", -20, "불확실성 극대화");
+      if (d.hasLegalSurfaceRight) addAdj("법정지상권 가능성", -18, "소유권 제한");
+      if (d.isReAuction) addAdj("재매각", -5, "리스크 신호");
+      const adjRate = Math.max(0.25, Math.min(1.20, baseRate + totalAdj / 100));
+      const low = Math.round(d.appraisalPrice * Math.max(0.20, adjRate - std));
+      const mid = Math.round(d.appraisalPrice * adjRate);
+      const high = Math.round(d.appraisalPrice * Math.min(1.25, adjRate + std));
+      return { region, type, baseRate, totalAdj, adjRate, adjs, low, mid, high, std };
+    }
+
+    function getLotRate(type) { return { 아파트:0.88, 다세대:0.80, 빌라:0.80, 상가:0.72, 토지:0.77, 오피스텔:0.82 }[type] ?? 0.80; }
+
+    function calcRights(d) {
+      let score = 100; const items = [];
+      if (d.inheritedRights) { score -= 50; items.push({ label:"인수권리 존재", pts:-50, level:"critical" }); }
+      if (d.hasLienClaim) { score -= 30; items.push({ label:"유치권 신고", pts:-30, level:"critical" }); }
+      if (d.hasLegalSurfaceRight) { score -= 40; items.push({ label:"법정지상권 가능성", pts:-40, level:"critical" }); }
+      const eb = (d.appraisalPrice ?? 0) * getLotRate(d.propertyType);
+      for (const t of d.tenants ?? []) {
+        if (t.rentRegistration) {
+          if (t.wavedResistanceRight && t.wavedDividend) { score -= 3; items.push({ label:"임차권등기+배당·대항력포기", pts:-3, level:"low" }); }
+          else if (t.wavedResistanceRight) { score -= 5; items.push({ label:"임차권등기+대항력포기", pts:-5, level:"low" }); }
+          else if (t.wavedDividend) { score -= 25; items.push({ label:"임차권등기+배당포기", pts:-25, level:"high" }); }
+          else { score -= 20; items.push({ label:"임차권등기(대항력유지)", pts:-20, level:"high" }); }
+        }
+        if (t.hasResistanceRight) {
+          if (t.wavedResistanceRight && t.wavedDividend) { score -= 3; items.push({ label:"선순위임차권(배당·대항력포기)", pts:-3, level:"low" }); }
+          else if (t.wavedResistanceRight) { score -= 5; items.push({ label:"선순위임차권(대항력포기)", pts:-5, level:"low" }); }
+          else if (!t.requestedDividend) { score -= 30; items.push({ label:"대항력임차인(배당요구미신청)", pts:-30, level:"critical" }); }
+          else if (t.deposit > eb) { score -= 40; items.push({ label:"선순위임차권 보증금>예상낙찰가", pts:-40, level:"critical" }); }
+          else { score -= 20; items.push({ label:"선순위임차권 보증금<예상낙찰가", pts:-20, level:"high" }); }
+        }
+      }
+      const att = (d.registrations ?? []).filter(r => r.type === "가압류");
+      if (att.length >= 2) { score -= 10; items.push({ label:`가압류 ${att.length}건`, pts:-10, level:"medium" }); }
+      return { score: Math.max(0, score), items };
+    }
+
+    function calcEviction(d) {
+      let score = 100; const items = [];
+      const oMap = { 소유자:{ pts:-10, level:"low" }, 임차인:{ pts:-20, level:"medium" }, 미상:{ pts:-30, level:"high" } };
+      const o = oMap[d.occupantType];
+      if (o) { score += o.pts; items.push({ label:`점유자: ${d.occupantType}`, pts:o.pts, level:o.level }); }
+      if ((d.failedBidCount ?? 0) >= 10) { score -= 20; items.push({ label:`유찰 ${d.failedBidCount}회`, pts:-20, level:"high" }); }
+      if (d.isReAuction) { score -= 15; items.push({ label:"재매각", pts:-15, level:"medium" }); }
+      if ((d.unpaidManagementFee ?? 0) >= 2000000) { score -= 10; items.push({ label:`미납관리비 ${fp(d.unpaidManagementFee)}`, pts:-10, level:"medium" }); }
+      return { score: Math.max(0, score), items };
+    }
+
+    function calcProfitScore(bid, appraisalPrice) {
+      if (!appraisalPrice) return 10;
+      const rate = (appraisalPrice - bid.mid) / bid.mid * 100;
+      return rate >= 20 ? 40 : rate >= 10 ? 30 : rate >= 5 ? 20 : 10;
+    }
+    function calcFinal(r, e, ps) { return Math.round(r.score * 0.4 + e.score * 0.2 + ps); }
+    function getRec(score) {
+      if (score >= 80) return { label:"입찰 추천", color:"#10b981" };
+      if (score >= 60) return { label:"현장 확인 후 결정", color:"#f59e0b" };
+      return { label:"패스 권고", color:"#ef4444" };
+    }
+
+    const IS_HOUSING = t => ["아파트","다세대","빌라","오피스텔"].includes(t);
+    function calcAcqTax(bidPrice, propertyType, entity, homeCount, isAdjusted) {
+      if (!IS_HOUSING(propertyType)) return { tax:Math.round(bidPrice*0.046), label:"4.6% (비주택)" };
+      if (entity === "법인") return { tax:Math.round(bidPrice*0.134), label:"13.4% (법인 주택)" };
+      if (homeCount === 0) { const r = bidPrice<=6e8?0.011:bidPrice<=9e8?0.022:0.035; return { tax:Math.round(bidPrice*r), label:bidPrice<=6e8?"1.1% (무주택)":bidPrice<=9e8?"2.2% (무주택)":"3.5% (무주택)" }; }
+      if (homeCount === 1) { const r = bidPrice<=6e8?0.011:bidPrice<=9e8?0.022:0.035; return { tax:Math.round(bidPrice*r), label:bidPrice<=6e8?"1.1%":bidPrice<=9e8?"2.2%":"3.5%" }; }
+      if (homeCount === 2) { const r = isAdjusted?0.09:0.022; return { tax:Math.round(bidPrice*r), label:isAdjusted?"9% (2주택·조정)":"2.2% (2주택·비조정)" }; }
+      const r = isAdjusted?0.134:0.09; return { tax:Math.round(bidPrice*r), label:isAdjusted?"13.4% (3주택+·조정)":"9% (3주택+·비조정)" };
+    }
+    function calcProgressiveTax(gain) {
+      const brackets = [[14000000,0.06],[50000000,0.15],[88000000,0.24],[150000000,0.35],[300000000,0.38],[500000000,0.40],[Infinity,0.42]];
+      let rem = gain, tax = 0, prev = 0;
+      for (const [lim, rate] of brackets) { const seg = Math.min(rem, lim-prev); if (seg<=0) break; tax += seg*rate; rem -= seg; prev = lim; if (rem<=0) break; }
+      return tax;
+    }
+    function calcTransferTax(gain, holdYears, propertyType, entity, homeCount, isAdjusted) {
+      if (gain <= 0) return { tax:0, effectiveRate:0, label:"양도차익 없음" };
+      const housing = IS_HOUSING(propertyType);
+      if (entity === "법인") { const cr=gain<=2e8?0.09:0.19, ex=housing?0.20:0, total=(cr+ex)*1.1; return { tax:Math.round(gain*total), effectiveRate:total, label:`법인세 ${pct(cr)} + 주택추가세 ${pct(ex)}` }; }
+      if (housing) {
+        if (holdYears < 1) return { tax:Math.round(gain*0.77), effectiveRate:0.77, label:"70% 단기중과" };
+        if (holdYears < 2) return { tax:Math.round(gain*0.66), effectiveRate:0.66, label:"60% 단기중과" };
+        const ltc = holdYears >= 3 ? 0.24 : 0.06;
+        const tg = gain*(1-ltc); const basic = calcProgressiveTax(tg);
+        const sur = isAdjusted && homeCount >= 2 ? (homeCount===2?0.20:0.30) : 0;
+        const total = (basic/tg + sur)*1.1;
+        return { tax:Math.round(tg*total), effectiveRate:total, label:`기본세율+중과${pct(sur)}+장특공제${pct(ltc)}` };
+      }
+      if (holdYears < 1) return { tax:Math.round(gain*0.55), effectiveRate:0.55, label:"50% 단기" };
+      if (holdYears < 2) return { tax:Math.round(gain*0.44), effectiveRate:0.44, label:"40%" };
+      const basic = calcProgressiveTax(gain); return { tax:Math.round(basic*1.1), effectiveRate:(basic/gain)*1.1, label:"기본세율" };
+    }
+    function calcLoan(bidPrice, ltvRate, interestRate, loanTermYears) {
+      const loan = Math.round(bidPrice*ltvRate/100);
+      const mr = interestRate/100/12; const months = loanTermYears*12;
+      const monthly = mr===0 ? Math.round(loan/months) : Math.round(loan*mr*Math.pow(1+mr,months)/(Math.pow(1+mr,months)-1));
+      return { loanAmount:loan, monthly, totalInterest:monthly*months-loan, selfFund:bidPrice-loan };
+    }
+    function defaultLtv(loanType, propertyType, homeCount, isAdjusted) {
+      if (loanType==="경락잔금") return IS_HOUSING(propertyType)?80:70;
+      if (loanType==="사업자") return IS_HOUSING(propertyType)?70:65;
+      if (!IS_HOUSING(propertyType)) return 70;
+      if (homeCount === 0) return 80;
+      return isAdjusted ? (homeCount===1?50:30) : 70;
+    }
+
+    const LC = { critical:"#ef4444", high:"#f97316", medium:"#eab308", low:"#22c55e" };
+    const sc = s => s>=70?"#10b981":s>=50?"#f59e0b":"#ef4444";
+    const C = { background:"#111118", border:"1px solid #1e1e2e", borderRadius:12, padding:20, marginBottom:14 };
+    const CT = { fontSize:11, fontWeight:600, color:"#4b5563", textTransform:"uppercase", letterSpacing:"0.1em", marginBottom:14 };
+
+    function ScoreBar({ score, label }) {
+      const c = sc(score);
+      return <div style={{marginBottom:10}}><div style={{display:"flex",justifyContent:"space-between",marginBottom:4}}><span style={{fontSize:12,color:"#6b7280"}}>{label}</span><span style={{fontSize:13,fontFamily:"monospace",color:c,fontWeight:700}}>{score}점</span></div><div style={{height:5,background:"#1e1e2e",borderRadius:3,overflow:"hidden"}}><div style={{height:"100%",width:`${Math.min(100,score)}%`,background:c,borderRadius:3,transition:"width 1s"}}/></div></div>;
+    }
+    function RiskItem({ label, pts, level }) {
+      const c = LC[level]; return <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"7px 10px",background:`${c}12`,border:`1px solid ${c}30`,borderRadius:6,marginBottom:5}}><span style={{fontSize:12,color:"#d1d5db",lineHeight:1.4}}>{label}</span><span style={{fontSize:12,fontFamily:"monospace",color:c,fontWeight:700,flexShrink:0,marginLeft:8}}>{pts}</span></div>;
+    }
+    function Row({ label, value, accent, sub }) {
+      return <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"7px 0",borderBottom:"1px solid #1a1a2a"}}><div><div style={{fontSize:12,color:"#6b7280"}}>{label}</div>{sub&&<div style={{fontSize:10,color:"#4b5563"}}>{sub}</div>}</div><span style={{fontSize:13,fontFamily:"monospace",color:accent??"#d1d5db",fontWeight:accent?700:400}}>{value}</span></div>;
+    }
+    function Tag({ label, value, vc }) {
+      return <div style={{background:"#0a0a14",border:"1px solid #1e1e2e",borderRadius:6,padding:"6px 12px",marginBottom:6}}><div style={{fontSize:10,color:"#4b5563",marginBottom:2}}>{label}</div><div style={{fontSize:13,fontWeight:600,color:vc??"#e0e0e8"}}>{value??"-"}</div></div>;
+    }
+    function FilterRow({ label, pass }) {
+      return <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"8px 0",borderBottom:"1px solid #1a1a2a"}}><span style={{fontSize:12,color:"#9ca3af"}}>{label}</span><span style={{fontSize:11,fontWeight:700,color:pass?"#10b981":"#ef4444",background:pass?"#064e3b":"#450a0a",padding:"2px 8px",borderRadius:4}}>{pass?"PASS":"FAIL"}</span></div>;
+    }
+    function Toggle({ value, onChange, options }) {
+      return <div style={{display:"flex",background:"#0a0a14",borderRadius:8,padding:3,gap:2}}>{options.map(o=><button key={o.value} onClick={()=>onChange(o.value)} style={{padding:"6px 12px",borderRadius:6,border:"none",background:value===o.value?"#f59e0b":"transparent",color:value===o.value?"#000":"#6b7280",fontSize:12,fontWeight:700,cursor:"pointer"}}>{o.label}</button>)}</div>;
+    }
+    function Slider({ label, value, min, max, step=1, onChange, fmt }) {
+      return <div style={{marginBottom:12}}><div style={{display:"flex",justifyContent:"space-between",marginBottom:4}}><span style={{fontSize:12,color:"#6b7280"}}>{label}</span><span style={{fontSize:13,fontFamily:"monospace",color:"#f59e0b",fontWeight:700}}>{fmt?fmt(value):value}</span></div><input type="range" min={min} max={max} step={step} value={value} onChange={e=>onChange(Number(e.target.value))} style={{width:"100%",accentColor:"#f59e0b"}}/></div>;
+    }
+    function Box({ label, value, color, sub }) {
+      return <div style={{background:"#0a0a14",border:`1px solid ${color}30`,borderRadius:10,padding:14,flex:1}}><div style={{fontSize:10,color:"#4b5563",marginBottom:4}}>{label}</div><div style={{fontSize:16,fontWeight:800,fontFamily:"monospace",color}}>{value}</div>{sub&&<div style={{fontSize:10,color:"#6b7280",marginTop:2}}>{sub}</div>}</div>;
+    }
+
+    function BidEstimateCard({ bid, d }) {
+      const adjColor = bid.totalAdj > 0 ? "#10b981" : bid.totalAdj < 0 ? "#ef4444" : "#6b7280";
+      return (
+        <div style={C}>
+          <div style={CT}>예상 낙찰가 분석</div>
+          <div style={{fontSize:11,color:"#4b5563",marginBottom:12}}>{bid.region} · {bid.type} · 유찰 {d.failedBidCount}회 통계 + 채점표 반영</div>
+          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:8,marginBottom:16}}>
+            <div style={{background:"#1a1a2e",borderRadius:8,padding:12,textAlign:"center"}}>
+              <div style={{fontSize:10,color:"#6b7280",marginBottom:4}}>하단 (보수적)</div>
+              <div style={{fontSize:14,fontWeight:700,fontFamily:"monospace",color:"#6b7280"}}>{fp(bid.low)}</div>
+              <div style={{fontSize:10,color:"#4b5563",marginTop:2}}>{Math.round(bid.adjRate*100-bid.std*100)}%</div>
+            </div>
+            <div style={{background:"#1a1a0e",border:"1px solid #f59e0b40",borderRadius:8,padding:12,textAlign:"center"}}>
+              <div style={{fontSize:10,color:"#f59e0b",marginBottom:4}}>예상 낙찰가</div>
+              <div style={{fontSize:16,fontWeight:800,fontFamily:"monospace",color:"#f59e0b"}}>{fp(bid.mid)}</div>
+              <div style={{fontSize:10,color:"#6b7280",marginTop:2}}>{Math.round(bid.adjRate*100)}%</div>
+            </div>
+            <div style={{background:"#1a1a2e",borderRadius:8,padding:12,textAlign:"center"}}>
+              <div style={{fontSize:10,color:"#6b7280",marginBottom:4}}>상단 (경쟁 시)</div>
+              <div style={{fontSize:14,fontWeight:700,fontFamily:"monospace",color:"#6b7280"}}>{fp(bid.high)}</div>
+              <div style={{fontSize:10,color:"#4b5563",marginTop:2}}>{Math.round(bid.adjRate*100+bid.std*100)}%</div>
+            </div>
+          </div>
+          <div style={{background:"#0a0a14",borderRadius:8,padding:12,marginBottom:12}}>
+            <div style={{display:"flex",justifyContent:"space-between",marginBottom:8}}>
+              <span style={{fontSize:12,color:"#6b7280"}}>통계 기준 ({bid.region} · {bid.type} · 유찰 {d.failedBidCount}회)</span>
+              <span style={{fontSize:13,fontFamily:"monospace",color:"#9ca3af",fontWeight:700}}>{Math.round(bid.baseRate*100)}%</span>
+            </div>
+            {bid.adjs.map((a,i)=>(
+              <div key={i} style={{display:"flex",justifyContent:"space-between",padding:"4px 0",borderTop:"1px solid #1a1a2a"}}>
+                <span style={{fontSize:12,color:"#9ca3af"}}>{a.label}</span>
+                <div style={{textAlign:"right"}}>
+                  <span style={{fontSize:12,fontFamily:"monospace",color:a.adj>0?"#10b981":a.adj<0?"#ef4444":"#6b7280",fontWeight:700}}>{a.adj>0?`+${a.adj}%`:a.adj<0?`${a.adj}%`:"0%"}</span>
+                  <div style={{fontSize:10,color:"#4b5563"}}>{a.reason}</div>
+                </div>
+              </div>
+            ))}
+            <div style={{display:"flex",justifyContent:"space-between",padding:"8px 0",borderTop:"1px solid #2a2a3e",marginTop:4}}>
+              <span style={{fontSize:13,fontWeight:700,color:"#e0e0e8"}}>조정 낙찰가율</span>
+              <span style={{fontSize:14,fontFamily:"monospace",color:adjColor,fontWeight:800}}>{Math.round(bid.baseRate*100)}% {bid.totalAdj>=0?"+":""}{bid.totalAdj}% = {Math.round(bid.adjRate*100)}%</span>
+            </div>
+          </div>
+          <div style={{fontSize:11,color:"#374151",lineHeight:1.5}}>범위: 감정가 × (조정낙찰가율 ± {Math.round(bid.std*100)}% 표준편차)</div>
+        </div>
+      );
+    }
+
+    function App() {
+      const [url, setUrl] = useState("");
+      const [loading, setLoading] = useState(false);
+      const [step, setStep] = useState("");
+      const [result, setResult] = useState(null);
+      const [error, setError] = useState(null);
+      const [dataSource, setDataSource] = useState("bookmarklet");
+      const [entity, setEntity] = useState("개인");
+      const [homeCount, setHomeCount] = useState(1);
+      const [isAdjusted, setIsAdjusted] = useState(true);
+      const [loanType, setLoanType] = useState("경락잔금");
+      const [ltvRate, setLtvRate] = useState(80);
+      const [interestRate, setInterestRate] = useState(5.0);
+      const [loanTerm, setLoanTerm] = useState(20);
+      const [holdYears, setHoldYears] = useState(2);
+      const [exitPriceRate, setExitPriceRate] = useState(100);
+      const [customBid, setCustomBid] = useState(0);
+
+      useMemo(() => {
+        const params = new URLSearchParams(window.location.search);
+        const data = params.get("data");
+        if (data) {
+          try {
+            const d = JSON.parse(atob(data));
+            setDataSource("bookmarklet");
+            const rights = calcRights(d), eviction = calcEviction(d);
+            const bid = calcBidEstimate(d, rights.score, eviction.score);
+            const profitScore = calcProfitScore(bid, d.appraisalPrice);
+            const finalScore = calcFinal(rights, eviction, profitScore);
+            const rec = getRec(finalScore);
+            const zoneDetect = { isAdjusted: d.isAdjusted };
+            setIsAdjusted(d.isAdjusted);
+            setCustomBid(bid.mid);
+            setLtvRate(defaultLtv("경락잔금", d.propertyType, 1, d.isAdjusted));
+            setResult({ d, rights, eviction, bid, profitScore, finalScore, rec, zoneDetect });
+            window.history.replaceState({}, document.title, window.location.pathname);
+          } catch(e) { setError("북마클릿 데이터 오류: " + e.message); }
+        }
+      }, []);
+
+      async function analyze() {
+        if (!url.trim() || loading) return;
+        setLoading(true); setError(null); setResult(null);
+        try {
+          setStep("페이지 가져오는 중...");
+          let pageText = "";
+          for (const pu of [`https://corsproxy.io/?url=${encodeURIComponent(url)}`,`https://api.allorigins.win/raw?url=${encodeURIComponent(url)}`]) {
+            try {
+              const r = await fetch(pu); if (!r.ok) continue;
+              const html = await r.text(); if (html.length < 500) continue;
+              const doc = new DOMParser().parseFromString(html,"text/html");
+              doc.querySelectorAll("script,style,link,meta,noscript").forEach(el=>el.remove());
+              const t = (doc.body?.innerText||"").replace(/[ \t]+/g," ").replace(/\n{3,}/g,"\n\n").trim();
+              if (t.length > 300) { pageText = t; break; }
+            } catch(_) {}
+          }
+          if (!pageText) throw new Error("페이지를 가져올 수 없습니다. 북마클릿 방식을 사용해주세요.");
+          setStep("데이터 파싱 중...");
+          const d = parseMadangs(pageText);
+          if (!d.appraisalPrice) throw new Error("감정가를 찾을 수 없습니다.");
+          setStep("채점 및 낙찰가 계산 중...");
+          const zoneDetect = detectAdjustedZone(d.address);
+          setIsAdjusted(zoneDetect.isAdjusted);
+          const rights = calcRights(d), eviction = calcEviction(d);
+          const bid = calcBidEstimate(d, rights.score, eviction.score);
+          const profitScore = calcProfitScore(bid, d.appraisalPrice);
+          const finalScore = calcFinal(rights, eviction, profitScore);
+          const rec = getRec(finalScore);
+          setCustomBid(bid.mid);
+          setLtvRate(defaultLtv(loanType, d.propertyType, homeCount, zoneDetect.isAdjusted));
+          setResult({ d, rights, eviction, bid, profitScore, finalScore, rec, zoneDetect });
+        } catch(e) { setError(e.message); }
+        finally { setLoading(false); setStep(""); }
+      }
+
+      const fin = useMemo(() => {
+        if (!result) return null;
+        const { d } = result;
+        const bidPrice = customBid || result.bid.mid;
+        const acqTax = calcAcqTax(bidPrice, d.propertyType, entity, homeCount, isAdjusted);
+        const regFee = Math.round(bidPrice*0.005);
+        const totalBuyCost = bidPrice + acqTax.tax + regFee + 3000000 + 5000000;
+        const loan = calcLoan(bidPrice, ltvRate, interestRate, loanTerm);
+        const exitPrice = Math.round(d.appraisalPrice * exitPriceRate/100);
+        const gain = exitPrice - totalBuyCost;
+        const tt = calcTransferTax(gain, holdYears, d.propertyType, entity, homeCount, isAdjusted);
+        const netProfit = gain - tt.tax;
+        const netRoi = totalBuyCost>0?(netProfit/totalBuyCost)*100:0;
+        const selfRoi = loan.selfFund>0?(netProfit/loan.selfFund)*100:0;
+        return { bidPrice, acqTax, regFee, totalBuyCost, loan, exitPrice, gain, tt, netProfit, netRoi, selfRoi };
+      }, [result, customBid, entity, homeCount, isAdjusted, loanType, ltvRate, interestRate, loanTerm, holdYears, exitPriceRate]);
+
+      const { d, rights, eviction, bid, finalScore, rec } = result ?? {};
+
+      return (
+        <div style={{minHeight:"100vh",background:"#0a0a0f",color:"#e0e0e8",fontFamily:"'Apple SD Gothic Neo','Noto Sans KR',sans-serif",padding:"28px 16px"}}>
+          <div style={{maxWidth:800,margin:"0 auto"}}>
+            <div style={{marginBottom:24}}>
+              <div style={{fontSize:22,fontWeight:800,color:"#f59e0b",letterSpacing:"-0.5px",marginBottom:4}}>경매 투자 분석기</div>
+              <div style={{fontSize:12,color:"#4b5563"}}>통계 낙찰가율 + 채점표 반영 · 세금 · 대출 · 손익 계산</div>
+            </div>
+
+            <div style={C}>
+              <div style={CT}>투자자 프로필</div>
+              <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:16}}>
+                <div><div style={{fontSize:11,color:"#6b7280",marginBottom:6}}>구분</div><Toggle value={entity} onChange={setEntity} options={[{value:"개인",label:"개인"},{value:"법인",label:"법인"}]}/></div>
+                {entity==="개인"&&<div><div style={{fontSize:11,color:"#6b7280",marginBottom:6}}>주택 보유수</div><Toggle value={homeCount} onChange={setHomeCount} options={[{value:0,label:"무주택"},{value:1,label:"1주택"},{value:2,label:"2주택"},{value:3,label:"3주택+"}]}/></div>}
+              </div>
+              {entity==="개인"&&homeCount===0&&<div style={{marginTop:10,padding:"8px 12px",background:"#064e3b",border:"1px solid #10b98130",borderRadius:6,fontSize:12,color:"#6ee7b7"}}>✓ 무주택자 — 취득세 일반세율, 양도세 중과 없음, LTV 최대 80%</div>}
+              {entity==="개인"&&homeCount>=2&&isAdjusted&&<div style={{marginTop:10,padding:"8px 12px",background:"#450a0a",border:"1px solid #ef444430",borderRadius:6,fontSize:12,color:"#fca5a5"}}>⚠ 조정지역 {homeCount}주택 — 취득세·양도세 중과 적용</div>}
+            </div>
+
+            <div style={C}>
+              <div style={CT}>입력 방식</div>
+              <Toggle value={dataSource} onChange={setDataSource} options={[{value:"bookmarklet",label:"북마클릿 (자동)"},{value:"url",label:"URL 직접"}]}/>
+              <div style={{marginTop:10,padding:"10px 12px",background:"#0a0a14",borderRadius:8,fontSize:12,color:"#6b7280"}}>
+                {dataSource==="bookmarklet"
+                  ? "경매마당 물건 페이지에서 북마크 클릭 → 이 페이지에 자동 로드됩니다"
+                  : "URL 입력 후 분석 (사이트 차단으로 실패할 수 있습니다)"}
+              </div>
+            </div>
+
+            {dataSource==="url"&&(
+              <div style={C}>
+                <div style={CT}>물건 URL 입력</div>
+                <input style={{width:"100%",background:"#0a0a14",border:"1px solid #2a2a3e",borderRadius:8,padding:"12px 14px",color:"#e0e0e8",fontSize:13,fontFamily:"monospace",outline:"none",boxSizing:"border-box"}}
+                  placeholder="https://madangs.com/caview?m_code=..."
+                  value={url} onChange={e=>setUrl(e.target.value)} onKeyDown={e=>e.key==="Enter"&&analyze()}/>
+                <button onClick={analyze} disabled={loading} style={{width:"100%",marginTop:10,padding:"13px",background:loading?"#1e1e2e":"#f59e0b",color:loading?"#4b5563":"#000",border:"none",borderRadius:8,fontSize:14,fontWeight:700,cursor:loading?"not-allowed":"pointer"}}>
+                  {loading?(step||"분석 중..."):"분석 시작"}
+                </button>
+              </div>
+            )}
+
+            {error&&<div style={{...C,border:"1px solid #450a0a",background:"#0d0505"}}><span style={{color:"#ef4444",fontSize:13}}>⚠ {error}</span></div>}
+
+            {!result&&!error&&<div style={{...C,textAlign:"center",padding:40}}>
+              <div style={{fontSize:40,marginBottom:16}}>🏠</div>
+              <div style={{fontSize:14,color:"#4b5563",marginBottom:8}}>경매마당 물건 페이지에서 북마클릿을 클릭하면</div>
+              <div style={{fontSize:14,color:"#4b5563",marginBottom:20}}>이 페이지에 자동으로 분석 결과가 표시됩니다</div>
+              <div style={{fontSize:11,color:"#374151",padding:"10px 16px",background:"#0a0a14",borderRadius:8,display:"inline-block"}}>
+                북마클릿 설치: GitHub 저장소 README 참고
+              </div>
+            </div>}
+
+            {result&&fin&&<>
+              <div style={C}>
+                <div style={CT}>물건 정보</div>
+                {d.address&&<div style={{fontSize:14,fontWeight:700,color:"#f1f1f1",marginBottom:12}}>{d.address}</div>}
+                <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(110px,1fr))",gap:8}}>
+                  <Tag label="용도" value={d.propertyType}/>
+                  <Tag label="경매유형" value={d.auctionType||"-"}/>
+                  <Tag label="유찰횟수" value={`${d.failedBidCount}회`} vc={d.failedBidCount>=10?"#f97316":undefined}/>
+                  <Tag label="재매각" value={d.isReAuction?"O":"X"} vc={d.isReAuction?"#f59e0b":"#10b981"}/>
+                  <Tag label="감정가" value={fp(d.appraisalPrice)}/>
+                  <Tag label="최저입찰가" value={fp(d.minimumBidPrice)} vc="#f59e0b"/>
+                  {d.areaPy>0&&<Tag label="건물 면적" value={`${d.areaPy.toFixed(1)}평`}/>}
+                  {d.floor&&<Tag label="층수" value={`${d.floor}층`}/>}
+                  <Tag label="엘리베이터" value={d.hasElevator?"있음":"없음"} vc={d.hasElevator?"#10b981":"#f97316"}/>
+                  {d.buildingAge&&<Tag label="건물 연령" value={`${d.buildingAge}년차`} vc={d.buildingAge>=30?"#f97316":undefined}/>}
+                  <Tag label="조정대상지역" value={result.zoneDetect.isAdjusted?"조정지역":"비조정"} vc={result.zoneDetect.isAdjusted?"#fca5a5":"#6ee7b7"}/>
+                </div>
+              </div>
+
+              <div style={C}>
+                <div style={CT}>위험도 종합 점수</div>
+                <div style={{display:"flex",gap:20,alignItems:"center",marginBottom:20}}>
+                  <div style={{width:76,height:76,borderRadius:"50%",border:`3px solid ${rec.color}`,display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}}>
+                    <span style={{fontSize:26,fontWeight:900,fontFamily:"monospace",color:rec.color}}>{finalScore}</span>
+                  </div>
+                  <div>
+                    <div style={{fontSize:17,fontWeight:800,color:rec.color,marginBottom:4}}>{rec.label}</div>
+                    <div style={{fontSize:11,color:"#4b5563",lineHeight:1.6}}>권리위험도×0.4 + 명도위험도×0.2 + 수익성×0.4<br/>80점↑ 입찰추천 · 60~79점 현장확인 · 60점↓ 패스</div>
+                  </div>
+                </div>
+                <ScoreBar score={rights.score} label="권리 위험도"/>
+                <ScoreBar score={eviction.score} label="명도 위험도"/>
+                <ScoreBar score={Math.round(result.profitScore/40*100)} label="수익성"/>
+              </div>
+
+              <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:14,marginBottom:14}}>
+                <div style={{...C,marginBottom:0}}><div style={CT}>권리 위험도 <span style={{color:sc(rights.score),fontFamily:"monospace"}}>{rights.score}점</span></div>{rights.items.length===0?<div style={{fontSize:12,color:"#10b981"}}>위험 요소 없음</div>:rights.items.map((it,i)=><RiskItem key={i} {...it}/>)}</div>
+                <div style={{...C,marginBottom:0}}><div style={CT}>명도 위험도 <span style={{color:sc(eviction.score),fontFamily:"monospace"}}>{eviction.score}점</span></div>{eviction.items.length===0?<div style={{fontSize:12,color:"#10b981"}}>위험 요소 없음</div>:eviction.items.map((it,i)=><RiskItem key={i} {...it}/>)}</div>
+              </div>
+
+              <BidEstimateCard bid={bid} d={d}/>
+
+              <div style={C}>
+                <div style={CT}>입찰가 시뮬레이터</div>
+                <Slider label="희망 입찰가" value={customBid} min={Math.round((d.minimumBidPrice||1)*0.9)} max={Math.round(d.appraisalPrice*1.2)} step={1000000} onChange={setCustomBid} fmt={v=>fp(v)}/>
+                <div style={{display:"flex",gap:8,marginBottom:14,flexWrap:"wrap"}}>
+                  {[["최저가",d.minimumBidPrice],["하단",bid.low],["예상",bid.mid],["상단",bid.high],["감정가",d.appraisalPrice]].map(([label,val])=>(
+                    <button key={label} onClick={()=>setCustomBid(val)} style={{padding:"4px 10px",background:customBid===val?"#f59e0b":"#1e1e2e",color:customBid===val?"#000":"#9ca3af",border:"none",borderRadius:6,fontSize:11,fontWeight:700,cursor:"pointer"}}>{label}</button>
+                  ))}
+                </div>
+                <Row label="낙찰가" value={fp(fin.bidPrice)} accent="#f59e0b"/>
+                <Row label={`취득세 (${fin.acqTax.label})`} value={fp(fin.acqTax.tax)}/>
+                <Row label="등기비 (0.5%)" value={fp(fin.regFee)}/>
+                <Row label="명도비 (예상)" value={fp(3000000)}/>
+                <Row label="수리비 (예상)" value={fp(5000000)}/>
+                <div style={{padding:"10px 0",marginTop:4,borderTop:"1px solid #2a2a3e",display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+                  <span style={{fontSize:13,fontWeight:700}}>총 매입비용</span>
+                  <span style={{fontSize:18,fontWeight:800,fontFamily:"monospace",color:"#f59e0b"}}>{fp(fin.totalBuyCost)}</span>
+                </div>
+              </div>
+
+              <div style={C}>
+                <div style={CT}>대출 계산기</div>
+                <div style={{marginBottom:14}}><div style={{fontSize:11,color:"#6b7280",marginBottom:6}}>대출 종류</div><Toggle value={loanType} onChange={v=>{setLoanType(v);setLtvRate(defaultLtv(v,d.propertyType,homeCount,isAdjusted));}} options={[{value:"경락잔금",label:"경락잔금"},{value:"주담대",label:"주담대"},{value:"사업자",label:"사업자"}]}/></div>
+                <Slider label="LTV" value={ltvRate} min={10} max={90} onChange={setLtvRate} fmt={v=>`${v}%`}/>
+                <Slider label="금리" value={interestRate} min={2} max={10} step={0.1} onChange={setInterestRate} fmt={v=>`${v.toFixed(1)}%`}/>
+                <Slider label="대출기간" value={loanTerm} min={5} max={30} onChange={setLoanTerm} fmt={v=>`${v}년`}/>
+                <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10,marginTop:14}}>
+                  <Box label="대출 가능금액" value={fp(fin.loan.loanAmount)} color="#f59e0b"/>
+                  <Box label="자기자금 필요" value={fp(fin.loan.selfFund)} color="#a78bfa"/>
+                  <Box label="월 납입금" value={fp(fin.loan.monthly)} color="#60a5fa"/>
+                  <Box label="총 이자" value={fp(fin.loan.totalInterest)} color="#f97316" sub={`${loanTerm}년 기준`}/>
+                </div>
+              </div>
+
+              <div style={C}>
+                <div style={CT}>세금 계산</div>
+                <div style={{marginBottom:14}}>
+                  <div style={{fontSize:11,color:"#6b7280",marginBottom:4}}>취득세</div>
+                  <div style={{display:"flex",justifyContent:"space-between",padding:"10px 12px",background:"#0a0a14",borderRadius:8}}>
+                    <span style={{fontSize:13,color:"#9ca3af"}}>{fin.acqTax.label}</span>
+                    <span style={{fontSize:14,fontFamily:"monospace",color:"#ef4444",fontWeight:700}}>{fp(fin.acqTax.tax)}</span>
+                  </div>
+                </div>
+                <div>
+                  <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:8}}>
+                    <div style={{fontSize:11,color:"#6b7280"}}>양도소득세</div>
+                    <Toggle value={holdYears} onChange={setHoldYears} options={[{value:1,label:"1년"},{value:2,label:"2년"},{value:3,label:"3년"}]}/>
+                  </div>
+                  <div style={{padding:"10px 12px",background:"#0a0a14",borderRadius:8}}>
+                    <div style={{fontSize:11,color:"#4b5563",marginBottom:6}}>{fin.tt.label}</div>
+                    <div style={{display:"flex",justifyContent:"space-between"}}>
+                      <span style={{fontSize:13,color:"#9ca3af"}}>양도차익 {fp(fin.gain)}</span>
+                      <span style={{fontSize:14,fontFamily:"monospace",color:"#ef4444",fontWeight:700}}>{fp(fin.tt.tax)}</span>
+                    </div>
+                    <div style={{fontSize:11,color:"#6b7280",marginTop:4}}>실효세율 {pct(fin.tt.effectiveRate)}</div>
+                  </div>
+                </div>
+              </div>
+
+              <div style={C}>
+                <div style={CT}>손익 시나리오</div>
+                <Slider label="예상 매도가 (감정가 대비)" value={exitPriceRate} min={80} max={130} onChange={setExitPriceRate} fmt={v=>`${v}% → ${fp(Math.round(d.appraisalPrice*v/100))}`}/>
+                <div style={{display:"flex",gap:8,marginBottom:14}}>
+                  {[[90,"보수적"],[100,"기준"],[110,"낙관적"]].map(([v,l])=><button key={v} onClick={()=>setExitPriceRate(v)} style={{padding:"4px 10px",background:exitPriceRate===v?"#f59e0b":"#1e1e2e",color:exitPriceRate===v?"#000":"#9ca3af",border:"none",borderRadius:6,fontSize:11,fontWeight:700,cursor:"pointer"}}>{l} ({v}%)</button>)}
+                </div>
+                <Row label="예상 매도가" value={fp(fin.exitPrice)} accent="#f59e0b"/>
+                <Row label="총 매입비용" value={fp(fin.totalBuyCost)}/>
+                <Row label="양도차익" value={fp(fin.gain)} accent={fin.gain>=0?"#10b981":"#ef4444"}/>
+                <Row label={`양도소득세 (${holdYears}년 보유)`} value={`-${fp(fin.tt.tax)}`}/>
+                <div style={{padding:"12px 0",marginTop:4,borderTop:"1px solid #2a2a3e"}}>
+                  <div style={{display:"flex",justifyContent:"space-between",marginBottom:10}}>
+                    <span style={{fontSize:14,fontWeight:700}}>세후 순수익</span>
+                    <span style={{fontSize:20,fontWeight:800,fontFamily:"monospace",color:fin.netProfit>=0?"#10b981":"#ef4444"}}>{fp(fin.netProfit)}</span>
+                  </div>
+                  <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10}}>
+                    <Box label="투자 수익률 (총비용)" value={fmtPct(fin.netRoi)} color={fin.netRoi>=10?"#10b981":fin.netRoi>=5?"#f59e0b":"#ef4444"}/>
+                    <Box label="자기자금 수익률" value={fmtPct(fin.selfRoi)} color={fin.selfRoi>=15?"#10b981":fin.selfRoi>=8?"#f59e0b":"#ef4444"} sub="레버리지 효과"/>
+                  </div>
+                </div>
+              </div>
+
+              <div style={C}>
+                <div style={CT}>1차 스크리닝 체크</div>
+                <FilterRow label="유찰 3회 이상" pass={(d.failedBidCount??0)>=3}/>
+                <FilterRow label="인수되는 권리 없음" pass={!d.inheritedRights}/>
+                <FilterRow label="세후 수익률 10% 이상" pass={fin.netRoi>=10}/>
+                <FilterRow label="유치권 신고 없음" pass={!d.hasLienClaim}/>
+                <FilterRow label="법정지상권 가능성 없음" pass={!d.hasLegalSurfaceRight}/>
+                <FilterRow label="선순위 임차권 없음/포기" pass={!(d.tenants??[]).some(t=>t.hasResistanceRight&&!t.wavedResistanceRight)}/>
+              </div>
+
+              {d.inheritedRights&&d.inheritedRightsDescription&&(
+                <div style={{...C,border:"1px solid #ef444440",background:"#0d0505"}}>
+                  <div style={{...CT,color:"#ef4444"}}>⚠ 인수되는 권리 상세</div>
+                  <div style={{fontSize:13,color:"#fca5a5",lineHeight:1.6}}>{d.inheritedRightsDescription}</div>
+                </div>
+              )}
+
+              <div style={{fontSize:11,color:"#374151",textAlign:"center",marginTop:8,lineHeight:1.6}}>
+                낙찰가율 통계: 대법원 경매통계 / 지지옥션 2020~2024 · 세금 계산은 참고용, 세무사 확인 권장
+              </div>
+            </>}
+          </div>
+        </div>
+      );
+    }
+
+    const root = ReactDOM.createRoot(document.getElementById('root'));
+    root.render(React.createElement(App));
+  </script>
+</body>
+</html>
