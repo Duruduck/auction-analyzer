@@ -18,6 +18,11 @@
   <script type="text/babel" data-presets="react">
     const { useState, useMemo } = React;
 
+    // UTF-8 safe decode: 북마클릿에서 btoa(unescape(encodeURIComponent(...))) 로 인코딩
+    function decodeData(str) {
+      return JSON.parse(decodeURIComponent(escape(atob(str))));
+    }
+
     function parsePrice(str) {
       if (!str) return 0;
       str = str.replace(/\s|,/g, "");
@@ -335,10 +340,11 @@
 
       useMemo(() => {
         const params = new URLSearchParams(window.location.search);
-        const data = params.get("data");
-        if (data) {
+        const raw = params.get("data");
+        if (raw) {
           try {
-            const d = JSON.parse(atob(data));
+            // UTF-8 safe decoding (북마클릿: btoa(unescape(encodeURIComponent(...))))
+            const d = decodeData(raw);
             setDataSource("bookmarklet");
             const rights = calcRights(d), eviction = calcEviction(d);
             const bid = calcBidEstimate(d, rights.score, eviction.score);
