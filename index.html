@@ -333,6 +333,11 @@
                   <div style={{fontSize:10,color:"#4b5563"}}>{a.reason}</div>
                 </div>
               </div>
+                <div style={{fontSize:"12px",opacity:.7}}>
+                marketType: {estimate.marketType}<br/>
+                baseRate: {(estimate.baseRate*100).toFixed(1)}%<br/>
+                adjRate: {(estimate.adjRate*100).toFixed(1)}%
+              </div>
             ))}
             <div style={{display:"flex",justifyContent:"space-between",padding:"8px 0",borderTop:"1px solid #2a2a3e",marginTop:4}}>
               <span style={{fontSize:13,fontWeight:700,color:"#e0e0e8"}}>조정 낙찰가율</span>
