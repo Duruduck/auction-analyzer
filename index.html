@@ -129,10 +129,12 @@
       let marketType = "normal";
       if ( d.propertyType === "아파트" &&   d.isAdjusted &&  d.areaPy >= 18 ) {  marketType = "hotApartment";    }  
       else if ( d.propertyType === "오피스텔" &&   d.areaPy <= 10   ) { marketType = "weakOfficetel";   }
-      else if ( d.propertyType === "빌라" || d.propertyType === "다세대" ) { marketType = "villa";}
+      else if ( d.propertyType?.includes("빌라") || d.propertyType?.includes("다세대") ) { marketType = "villa";}
+      else if ( d.propertyType?.includes("다가구")) { marketType = "multiFamily";}
       if (marketType === "hotApartment") {baseRate += 0.06;}
       if (marketType === "weakOfficetel") {baseRate -= 0.12;}
       if (marketType === "villa") {baseRate -= 0.04;}
+      if (marketType === "multiFamily") { baseRate -= 0.10;}
       const std =
       marketType === "hotApartment"
         ? 0.04
@@ -343,6 +345,8 @@
                   ? "🔥 인기 실거주 아파트"
                   : bid.marketType === "weakOfficetel"
                   ? "⚠️ 비인기 소형 오피스텔"
+                  : bid.marketType === "multiFamily"
+                  ? "🏚️ 다가구"
                   : bid.marketType === "villa"
                   ? "🏘️ 빌라/다세대"
                   : "📊 일반 물건"
