@@ -123,8 +123,22 @@
       const region = detectRegion(d.address);
       const type = d.propertyType;
       const rates = (STAT_RATES[region]?.[type] || STAT_RATES["지방"]["다세대"]);
-      const baseRate = rates[failedIdx(d.failedBidCount)] / 100;
-      const std = (STAT_STD[type] || 8) / 100;
+      // const baseRate = rates[failedIdx(d.failedBidCount)] / 100;
+      // const std = (STAT_STD[type] || 8) / 100;
+      let baseRate = rates[failedIdx(d.failedBidCount)] / 100;
+      let marketType = "normal";
+      if ( d.propertyType === "아파트" &&   d.isAdjusted &&  d.areaPy >= 18 ) {  marketType = "hotApartment";    }  
+      else if ( d.propertyType === "오피스텔" &&   d.areaPy <= 10   ) { marketType = "weakOfficetel";   }
+      else if ( d.propertyType === "빌라" || d.propertyType === "다세대" ) { marketType = "villa";}
+      if (marketType === "hotApartment") {baseRate += 0.06;}
+      if (marketType === "weakOfficetel") {baseRate -= 0.12;}
+      if (marketType === "villa") {baseRate -= 0.04;}
+      const std =
+      marketType === "hotApartment"
+        ? 0.04
+        : marketType === "weakOfficetel"
+        ? 0.09
+        : (STAT_STD[type] || 8) / 100;
       const adjs = []; let totalAdj = 0;
       const addAdj = (label, adj, reason) => { totalAdj += adj; adjs.push({ label, adj, reason }); };
       if (rightsScore >= 90) addAdj("권리 위험도 우수 (90점+)", +3, "입찰자 신뢰도 높음");
@@ -139,11 +153,12 @@
       if (d.inheritedRights) addAdj("인수권리 존재", -15, "실질 비용 증가");
       if (d.hasLienClaim) addAdj("유치권 신고", -20, "불확실성 극대화");
       if (d.hasLegalSurfaceRight) addAdj("법정지상권 가능성", -18, "소유권 제한");
-      if (d.isReAuction) addAdj("재매각", -15, "낙찰자 포기 이력");
+      if (d.isReAuction) addAdj("재매각", -25, "낙찰자 포기 이력");
+      if (d.hasSpecialSaleConditions) addAdj("특별매각조건", -20, "권리/처분 제한");
       const adjRate = Math.max(0.25, Math.min(1.20, baseRate + totalAdj / 100));
       const low = Math.round(d.appraisalPrice * Math.max(0.20, adjRate - std));
       const mid = Math.round(d.appraisalPrice * adjRate);
-      const high = Math.round(d.appraisalPrice * Math.min(1.25, adjRate + std));
+      const high = Math.round(d.appraisalPrice *  Math.min(    marketType === "hotApartment" ? 1.08 : 0.95,  adjRate + std ));
       return { region, type, baseRate, totalAdj, adjRate, adjs, low, mid, high, std };
     }
 
