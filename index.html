@@ -161,11 +161,55 @@
       if (d.isReAuction) addAdj("재매각", -25, "낙찰자 포기 이력");
       if (d.hasSpecialSaleConditions) addAdj("특별매각조건", -20, "권리/처분 제한");
       const adjRate = Math.max(0.25, Math.min(1.20, baseRate + totalAdj / 100));
-      const low = Math.round(d.appraisalPrice * Math.max(0.20, adjRate - std));
-      const anchorPrice = d.minimumBidPrice || d.appraisalPrice;
-      const premium = Math.max(-0.05, Math.min(0.15, totalAdj / 100));
-      const mid =  Math.round(anchorPrice * (1 + premium));
-      const high = Math.round(d.appraisalPrice *  Math.min(    marketType === "hotApartment" ? 1.08 : 0.95,  adjRate + std ));
+      // ===============================
+      // 🔥 실전형 낙찰가 모델 (교체용)
+      // ===============================
+      // 1) 시장 압축 (유찰 기반)
+      function marketCompression(failedBidCount) {const decay = Math.pow(0.92, failedBidCount);return Math.max(0.35, 0.85 * decay);}
+      // 2) 경쟁 강도
+      function competitionPressure(d) {
+        let score = 0;
+        if (d.propertyType === "아파트") score += 20;
+        if (d.isAdjusted) score += 15;
+        if (d.failedBidCount <= 1) score += 25;
+        if (d.areaPy >= 18) score += 10;
+        if (d.hasLienClaim) score -= 40;
+        if (d.inheritedRights) score -= 35;
+        if (d.hasLegalSurfaceRight) score -= 30;
+        return Math.max(0, Math.min(100, score));
+      }
+      // 3) 리스크 계수
+      function riskMultiplier(d) {
+        let r = 1.0;
+        if (d.inheritedRights) r *= 0.75;
+        if (d.hasLienClaim) r *= 0.70;
+        if (d.hasLegalSurfaceRight) r *= 0.72;
+        if (d.isReAuction) r *= 0.80;
+        if (d.hasSpecialSaleConditions) r *= 0.78;
+        return r;
+      }
+      // ===============================
+      // 🔥 여기부터 핵심 계산
+      // ===============================  
+      const base = d.appraisalPrice;
+      const compression = marketCompression(d.failedBidCount);
+      const competition = competitionPressure(d);
+      const risk = riskMultiplier(d);
+      
+      // 경쟁 보정
+      const competitionAdj =
+        competition >= 70 ? 1.05 :
+        competition >= 50 ? 1.00 :
+        competition >= 30 ? 0.95 : 0.90;
+      // 최종 낙찰률
+      const finalRate = compression * competitionAdj * risk;
+      // ===============================
+      // 📌 결과 (절대 역전 안 생김)
+      // ===============================
+      const mid = Math.round(base * finalRate);
+      const low = Math.round(mid * 0.90);
+      const high = Math.round(mid * 1.10);
+      
       return { region, type, marketType, baseRate, totalAdj, adjRate, adjs, low, mid, high, std };
     }
 
