@@ -334,11 +334,36 @@
                 </div>
               </div>
             ))}
-            <div style={{fontSize:12,opacity:.7,marginTop:10}}>
-              marketType: {bid.marketType}<br/>
-              baseRate: {(bid.baseRate*100).toFixed(1)}%<br/>
-              adjRate: {(bid.adjRate*100).toFixed(1)}%
+            // <div style={{fontSize:12,opacity:.7,marginTop:10}}>
+            //   marketType: {bid.marketType}<br/>
+            //   baseRate: {(bid.baseRate*100).toFixed(1)}%<br/>
+            //   adjRate: {(bid.adjRate*100).toFixed(1)}%
+            // </div>
+            <div style={{  fontSize:12, opacity:.85, marginTop:10, lineHeight:1.6, background:"#111827",   borderRadius:8,   padding:10  }}  >
+            <div>
+              시장 유형:
+              {" "}
+              {
+                bid.marketType === "hotApartment"
+                  ? "🔥 인기 실거주 아파트"
+                  : bid.marketType === "weakOfficetel"
+                  ? "⚠️ 비인기 소형 오피스텔"
+                  : bid.marketType === "villa"
+                  ? "🏘️ 빌라/다세대"
+                  : "📊 일반 물건"
+              }
             </div>
+            <div>
+              기본 통계 낙찰률:
+              {" "}
+              <b>{(bid.baseRate*100).toFixed(1)}%</b>
+            </div>
+            <div>
+              최종 예상 낙찰률:
+              {" "}
+              <b>{(bid.adjRate*100).toFixed(1)}%</b>
+            </div>
+          </div>
             <div style={{display:"flex",justifyContent:"space-between",padding:"8px 0",borderTop:"1px solid #2a2a3e",marginTop:4}}>
               <span style={{fontSize:13,fontWeight:700,color:"#e0e0e8"}}>조정 낙찰가율</span>
               <span style={{fontSize:14,fontFamily:"monospace",color:adjColor,fontWeight:800}}>{Math.round(bid.baseRate*100)}% {bid.totalAdj>=0?"+":""}{bid.totalAdj}% = {Math.round(bid.adjRate*100)}%</span>
