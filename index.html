@@ -1,4 +1,4 @@
-<!DOCTYPE html>
+  <!DOCTYPE html>
 <html lang="ko">
 <head>
   <meta charset="UTF-8" />
@@ -84,18 +84,20 @@
       const im = find(/([^\n]*매수인이 인수[^\n]*)/);
       const inheritedRightsDescription = im ? im[1].trim() : "";
       const hasLienClaim = has("유치권"); const hasLegalSurfaceRight = has("법정지상권");
+      const hasSpecialSaleConditions =has("특별매각조건") || has("매수인수사항") || has("공유자우선매수") || has("지분매각") || has("건물만매각") || has("토지만매각") || has("농지취득자격증명");
       const hasRentReg = has("임차권등기") || has("임차권설정");
       const hasSenior = has("선순위임차인") || has("선순위 임차인");
       const wavedRes = has("대항력 포기") || has("대항력포기");
       const wavedDiv = has("배당 포기") || has("배당포기");
-      const reqDiv = has("배당요구");
+      const reqDiv  = has("배당요구") && !has("배당요구종기내 미신청") && !has("배당요구 없음");
+      const noDividendRequest = has("배당요구종기내 미신청") || has("배당요구 없음");
       const deps = [...text.matchAll(/보증[금:：]?\s*:?\s*([\d,억만원]+)/g)].map(m => parsePrice(m[1])).filter(v => v > 1000000);
-      const tenants = deps.map(deposit => ({ deposit, hasResistanceRight: hasSenior || hasRentReg, wavedResistanceRight: wavedRes, wavedRentRight: wavedRes, wavedDividend: wavedDiv, requestedDividend: reqDiv, rentRegistration: hasRentReg }));
+      const tenants = deps.map(deposit => ({ deposit, hasResistanceRight: hasSenior || hasRentReg, wavedResistanceRight: wavedRes, wavedRentRight: wavedRes, wavedDividend: wavedDiv, requestedDividend: reqDiv, noDividendRequest, rentRegistration: hasRentReg }));
       const registrations = [];
       [...text.matchAll(/가압류[^0-9]*([0-9,]+)원/g)].forEach(m => registrations.push({ type: "가압류", amount: parseInt(m[1].replace(/,/g, "")) }));
       let occupantType = "미상"; if (has("소유자") && has("점유")) occupantType = "소유자"; else if (has("임차인")) occupantType = "임차인";
       const um = find(/미납[관리비]*\s*([\d,억만원]+)/);
-      return { address, propertyType, appraisalPrice, minimumBidPrice, failedBidCount, isReAuction, auctionType, areaSqm, areaPy, floor, hasElevator, buildingAge, builtYear, tenants, registrations, inheritedRights, inheritedRightsDescription, hasLienClaim, hasLegalSurfaceRight, occupantType, unpaidManagementFee: um ? parsePrice(um[1]) : 0 };
+      return { address, propertyType, appraisalPrice, minimumBidPrice, failedBidCount, isReAuction, auctionType, areaSqm, areaPy, floor, hasElevator, buildingAge, builtYear, tenants, registrations, inheritedRights, inheritedRightsDescription, hasLienClaim, hasLegalSurfaceRight,hasSpecialSaleConditions, occupantType, unpaidManagementFee: um ? parsePrice(um[1]) : 0 };
     }
 
     const STAT_RATES = {
@@ -137,7 +139,7 @@
       if (d.inheritedRights) addAdj("인수권리 존재", -15, "실질 비용 증가");
       if (d.hasLienClaim) addAdj("유치권 신고", -20, "불확실성 극대화");
       if (d.hasLegalSurfaceRight) addAdj("법정지상권 가능성", -18, "소유권 제한");
-      if (d.isReAuction) addAdj("재매각", -5, "리스크 신호");
+      if (d.isReAuction) addAdj("재매각", -15, "낙찰자 포기 이력);
       const adjRate = Math.max(0.25, Math.min(1.20, baseRate + totalAdj / 100));
       const low = Math.round(d.appraisalPrice * Math.max(0.20, adjRate - std));
       const mid = Math.round(d.appraisalPrice * adjRate);
@@ -149,6 +151,7 @@
 
     function calcRights(d) {
       let score = 100; const items = [];
+      if (d.hasSpecialSaleConditions) { score -= 35; items.push({label:"특별매각조건 존재", pts:-35,level:"critical" });}
       if (d.inheritedRights) { score -= 50; items.push({ label:"인수권리 존재", pts:-50, level:"critical" }); }
       if (d.hasLienClaim) { score -= 30; items.push({ label:"유치권 신고", pts:-30, level:"critical" }); }
       if (d.hasLegalSurfaceRight) { score -= 40; items.push({ label:"법정지상권 가능성", pts:-40, level:"critical" }); }
@@ -179,7 +182,13 @@
       const o = oMap[d.occupantType];
       if (o) { score += o.pts; items.push({ label:`점유자: ${d.occupantType}`, pts:o.pts, level:o.level }); }
       if ((d.failedBidCount ?? 0) >= 10) { score -= 20; items.push({ label:`유찰 ${d.failedBidCount}회`, pts:-20, level:"high" }); }
-      if (d.isReAuction) { score -= 15; items.push({ label:"재매각", pts:-15, level:"medium" }); }
+      if (d.isReAuction) {
+        score -= 35;
+        items.push({
+        label:"재매각 (낙찰자 포기)",
+        pts:-35,
+        level:"critical"
+      });}
       if ((d.unpaidManagementFee ?? 0) >= 2000000) { score -= 10; items.push({ label:`미납관리비 ${fp(d.unpaidManagementFee)}`, pts:-10, level:"medium" }); }
       return { score: Math.max(0, score), items };
     }
