@@ -70,7 +70,7 @@
       const apm = find(/감정가\s*\n?\s*([\d,억만원]+)/); const appraisalPrice = apm ? parsePrice(apm[1]) : 0;
       const minm = find(/최저가\s*\n?\s*([\d,억만원]+)/); const minimumBidPrice = minm ? parsePrice(minm[1]) : 0;
       const fm = find(/유찰\s*(\d+)회/); const failedBidCount = fm ? parseInt(fm[1]) : 0;
-      const isReAuction = has("재매각");
+      const isReAuction =/재매각\s*\(/.test(text) ||/재매각\s*보증금/.test(text) ||/매각조건\s*재매각/.test(text);
       let auctionType = ""; if (has("강제경매")) auctionType = "강제경매"; else if (has("임의경매")) auctionType = "임의경매";
       const bldM = find(/건물\s*([\d.]+)㎡[^(]*\(([\d.]+)평\)/);
       const areaSqm = bldM ? parseFloat(bldM[1]) : 0;
