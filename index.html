@@ -159,7 +159,7 @@
       const low = Math.round(d.appraisalPrice * Math.max(0.20, adjRate - std));
       const mid = Math.round(d.appraisalPrice * adjRate);
       const high = Math.round(d.appraisalPrice *  Math.min(    marketType === "hotApartment" ? 1.08 : 0.95,  adjRate + std ));
-      return { region, type, baseRate, totalAdj, adjRate, adjs, low, mid, high, std };
+      return { region, type, marketType, baseRate, totalAdj, adjRate, adjs, low, mid, high, std };
     }
 
     function getLotRate(type) { return { 아파트:0.88, 다세대:0.80, 빌라:0.80, 상가:0.72, 토지:0.77, 오피스텔:0.82 }[type] ?? 0.80; }
