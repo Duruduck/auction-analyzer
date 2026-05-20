@@ -162,7 +162,9 @@
       if (d.hasSpecialSaleConditions) addAdj("특별매각조건", -20, "권리/처분 제한");
       const adjRate = Math.max(0.25, Math.min(1.20, baseRate + totalAdj / 100));
       const low = Math.round(d.appraisalPrice * Math.max(0.20, adjRate - std));
-      const mid = Math.round(d.appraisalPrice * adjRate);
+      const anchorPrice = d.minimumBidPrice || d.appraisalPrice;
+      const premium = Math.max(-0.05, Math.min(0.15, totalAdj / 100));
+      const mid =  Math.round(anchorPrice * (1 + premium));
       const high = Math.round(d.appraisalPrice *  Math.min(    marketType === "hotApartment" ? 1.08 : 0.95,  adjRate + std ));
       return { region, type, marketType, baseRate, totalAdj, adjRate, adjs, low, mid, high, std };
     }
