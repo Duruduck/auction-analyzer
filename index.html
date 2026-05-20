@@ -65,8 +65,11 @@
       if (has("아파트")) propertyType = "아파트";
       else if (has("오피스텔")) propertyType = "오피스텔";
       else if (has("상가")) propertyType = "상가";
-      else if (has("토지")) propertyType = "토지";
+      else if (has("다세대")) propertyType = "다세대";
+      else if (has("연립")) propertyType = "연립";
+      else if (has("다가구")) propertyType = "다가구";  
       else if (has("빌라")) propertyType = "빌라";
+      else if (has("토지") && !has("대지권")) propertyType = "토지";
       const apm = find(/감정가\s*\n?\s*([\d,억만원]+)/); const appraisalPrice = apm ? parsePrice(apm[1]) : 0;
       const minm = find(/최저가\s*\n?\s*([\d,억만원]+)/); const minimumBidPrice = minm ? parsePrice(minm[1]) : 0;
       const fm = find(/유찰\s*(\d+)회/); const failedBidCount = fm ? parseInt(fm[1]) : 0;
