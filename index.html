@@ -297,314 +297,57 @@
       return <div style={{background:"#0a0a14",border:`1px solid ${color}30`,borderRadius:10,padding:14,flex:1}}><div style={{fontSize:10,color:"#4b5563",marginBottom:4}}>{label}</div><div style={{fontSize:16,fontWeight:800,fontFamily:"monospace",color}}>{value}</div>{sub&&<div style={{fontSize:10,color:"#6b7280",marginTop:2}}>{sub}</div>}</div>;
     }
 
-function BidEstimateCard({ bid, d }) {
-  const adjColor =
-    bid.totalAdj > 0
-      ? "#10b981"
-      : bid.totalAdj < 0
-      ? "#ef4444"
-      : "#6b7280";
-
-  return (
-    <div style={C}>
-      <div style={CT}>예상 낙찰가 분석</div>
-
-      <div
-        style={{
-          fontSize:11,
-          color:"#4b5563",
-          marginBottom:12
-        }}
-      >
-        {bid.region} · {bid.type} · 유찰 {d.failedBidCount}회 통계 + 채점표 반영
-      </div>
-
-      <div
-        style={{
-          display:"grid",
-          gridTemplateColumns:"1fr 1fr 1fr",
-          gap:8,
-          marginBottom:16
-        }}
-      >
-        <div
-          style={{
-            background:"#1a1a2e",
-            borderRadius:8,
-            padding:12,
-            textAlign:"center"
-          }}
-        >
-          <div
-            style={{
-              fontSize:10,
-              color:"#6b7280",
-              marginBottom:4
-            }}
-          >
-            하단 (보수적)
-          </div>
-
-          <div
-            style={{
-              fontSize:14,
-              fontWeight:700,
-              fontFamily:"monospace",
-              color:"#6b7280"
-            }}
-          >
-            {fp(bid.low)}
-          </div>
-
-          <div
-            style={{
-              fontSize:10,
-              color:"#4b5563",
-              marginTop:2
-            }}
-          >
-            {Math.round(
-              bid.adjRate * 100 -
-              bid.std * 100
-            )}%
-          </div>
-        </div>
-
-        <div
-          style={{
-            background:"#1a1a0e",
-            border:"1px solid #f59e0b40",
-            borderRadius:8,
-            padding:12,
-            textAlign:"center"
-          }}
-        >
-          <div
-            style={{
-              fontSize:10,
-              color:"#f59e0b",
-              marginBottom:4
-            }}
-          >
-            예상 낙찰가
-          </div>
-
-          <div
-            style={{
-              fontSize:16,
-              fontWeight:800,
-              fontFamily:"monospace",
-              color:"#f59e0b"
-            }}
-          >
-            {fp(bid.mid)}
-          </div>
-
-          <div
-            style={{
-              fontSize:10,
-              color:"#6b7280",
-              marginTop:2
-            }}
-          >
-            {Math.round(bid.adjRate * 100)}%
-          </div>
-        </div>
-
-        <div
-          style={{
-            background:"#1a1a2e",
-            borderRadius:8,
-            padding:12,
-            textAlign:"center"
-          }}
-        >
-          <div
-            style={{
-              fontSize:10,
-              color:"#6b7280",
-              marginBottom:4
-            }}
-          >
-            상단 (경쟁 시)
-          </div>
-
-          <div
-            style={{
-              fontSize:14,
-              fontWeight:700,
-              fontFamily:"monospace",
-              color:"#6b7280"
-            }}
-          >
-            {fp(bid.high)}
-          </div>
-
-          <div
-            style={{
-              fontSize:10,
-              color:"#4b5563",
-              marginTop:2
-            }}
-          >
-            {Math.round(
-              bid.adjRate * 100 +
-              bid.std * 100
-            )}%
-          </div>
-        </div>
-      </div>
-
-      <div
-        style={{
-          background:"#0a0a14",
-          borderRadius:8,
-          padding:12,
-          marginBottom:12
-        }}
-      >
-        <div
-          style={{
-            display:"flex",
-            justifyContent:"space-between",
-            marginBottom:8
-          }}
-        >
-          <span
-            style={{
-              fontSize:12,
-              color:"#6b7280"
-            }}
-          >
-            통계 기준 ({bid.region} · {bid.type} · 유찰 {d.failedBidCount}회)
-          </span>
-
-          <span
-            style={{
-              fontSize:13,
-              fontFamily:"monospace",
-              color:"#9ca3af",
-              fontWeight:700
-            }}
-          >
-            {Math.round(bid.baseRate * 100)}%
-          </span>
-        </div>
-
-        {bid.adjs.map((a,i)=>(
-          <div
-            key={i}
-            style={{
-              display:"flex",
-              justifyContent:"space-between",
-              padding:"4px 0",
-              borderTop:"1px solid #1a1a2a"
-            }}
-          >
-            <span
-              style={{
-                fontSize:12,
-                color:"#9ca3af"
-              }}
-            >
-              {a.label}
-            </span>
-
-            <div style={{textAlign:"right"}}>
-              <span
-                style={{
-                  fontSize:12,
-                  fontFamily:"monospace",
-                  color:
-                    a.adj > 0
-                      ? "#10b981"
-                      : a.adj < 0
-                      ? "#ef4444"
-                      : "#6b7280",
-                  fontWeight:700
-                }}
-              >
-                {a.adj > 0
-                  ? `+${a.adj}%`
-                  : a.adj < 0
-                  ? `${a.adj}%`
-                  : "0%"}
-              </span>
-
-              <div
-                style={{
-                  fontSize:10,
-                  color:"#4b5563"
-                }}
-              >
-                {a.reason}
-              </div>
+    function BidEstimateCard({ bid, d }) {
+      const adjColor = bid.totalAdj > 0 ? "#10b981" : bid.totalAdj < 0 ? "#ef4444" : "#6b7280";
+      return (
+        <div style={C}>
+          <div style={CT}>예상 낙찰가 분석</div>
+          <div style={{fontSize:11,color:"#4b5563",marginBottom:12}}>{bid.region} · {bid.type} · 유찰 {d.failedBidCount}회 통계 + 채점표 반영</div>
+          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:8,marginBottom:16}}>
+            <div style={{background:"#1a1a2e",borderRadius:8,padding:12,textAlign:"center"}}>
+              <div style={{fontSize:10,color:"#6b7280",marginBottom:4}}>하단 (보수적)</div>
+              <div style={{fontSize:14,fontWeight:700,fontFamily:"monospace",color:"#6b7280"}}>{fp(bid.low)}</div>
+              <div style={{fontSize:10,color:"#4b5563",marginTop:2}}>{Math.round(bid.adjRate*100-bid.std*100)}%</div>
+            </div>
+            <div style={{background:"#1a1a0e",border:"1px solid #f59e0b40",borderRadius:8,padding:12,textAlign:"center"}}>
+              <div style={{fontSize:10,color:"#f59e0b",marginBottom:4}}>예상 낙찰가</div>
+              <div style={{fontSize:16,fontWeight:800,fontFamily:"monospace",color:"#f59e0b"}}>{fp(bid.mid)}</div>
+              <div style={{fontSize:10,color:"#6b7280",marginTop:2}}>{Math.round(bid.adjRate*100)}%</div>
+            </div>
+            <div style={{background:"#1a1a2e",borderRadius:8,padding:12,textAlign:"center"}}>
+              <div style={{fontSize:10,color:"#6b7280",marginBottom:4}}>상단 (경쟁 시)</div>
+              <div style={{fontSize:14,fontWeight:700,fontFamily:"monospace",color:"#6b7280"}}>{fp(bid.high)}</div>
+              <div style={{fontSize:10,color:"#4b5563",marginTop:2}}>{Math.round(bid.adjRate*100+bid.std*100)}%</div>
             </div>
           </div>
-        ))}
-
-        <div
-          style={{
-            fontSize:"12px",
-            opacity:.7,
-            marginTop:10,
-            lineHeight:1.5
-          }}
-        >
-          marketType: {bid.marketType}<br/>
-          baseRate: {(bid.baseRate * 100).toFixed(1)}%<br/>
-          adjRate: {(bid.adjRate * 100).toFixed(1)}%
+          <div style={{background:"#0a0a14",borderRadius:8,padding:12,marginBottom:12}}>
+            <div style={{display:"flex",justifyContent:"space-between",marginBottom:8}}>
+              <span style={{fontSize:12,color:"#6b7280"}}>통계 기준 ({bid.region} · {bid.type} · 유찰 {d.failedBidCount}회)</span>
+              <span style={{fontSize:13,fontFamily:"monospace",color:"#9ca3af",fontWeight:700}}>{Math.round(bid.baseRate*100)}%</span>
+            </div>
+            {bid.adjs.map((a,i)=>(
+              <div key={i} style={{display:"flex",justifyContent:"space-between",padding:"4px 0",borderTop:"1px solid #1a1a2a"}}>
+                <span style={{fontSize:12,color:"#9ca3af"}}>{a.label}</span>
+                <div style={{textAlign:"right"}}>
+                  <span style={{fontSize:12,fontFamily:"monospace",color:a.adj>0?"#10b981":a.adj<0?"#ef4444":"#6b7280",fontWeight:700}}>{a.adj>0?`+${a.adj}%`:a.adj<0?`${a.adj}%`:"0%"}</span>
+                  <div style={{fontSize:10,color:"#4b5563"}}>{a.reason}</div>
+                </div>
+              </div>
+            ))}
+            <div style={{fontSize:12,opacity:.7,marginTop:10}}>
+              marketType: {bid.marketType}<br/>
+              baseRate: {(bid.baseRate*100).toFixed(1)}%<br/>
+              adjRate: {(bid.adjRate*100).toFixed(1)}%
+            </div>
+            <div style={{display:"flex",justifyContent:"space-between",padding:"8px 0",borderTop:"1px solid #2a2a3e",marginTop:4}}>
+              <span style={{fontSize:13,fontWeight:700,color:"#e0e0e8"}}>조정 낙찰가율</span>
+              <span style={{fontSize:14,fontFamily:"monospace",color:adjColor,fontWeight:800}}>{Math.round(bid.baseRate*100)}% {bid.totalAdj>=0?"+":""}{bid.totalAdj}% = {Math.round(bid.adjRate*100)}%</span>
+            </div>
+          </div>
+          <div style={{fontSize:11,color:"#374151",lineHeight:1.5}}>범위: 감정가 × (조정낙찰가율 ± {Math.round(bid.std*100)}% 표준편차)</div>
         </div>
-
-        <div
-          style={{
-            display:"flex",
-            justifyContent:"space-between",
-            padding:"8px 0",
-            borderTop:"1px solid #2a2a3e",
-            marginTop:8
-          }}
-        >
-          <span
-            style={{
-              fontSize:13,
-              fontWeight:700,
-              color:"#e0e0e8"
-            }}
-          >
-            조정 낙찰가율
-          </span>
-
-          <span
-            style={{
-              fontSize:14,
-              fontFamily:"monospace",
-              color:adjColor,
-              fontWeight:800
-            }}
-          >
-            {Math.round(bid.baseRate * 100)}%
-            {" "}
-            {bid.totalAdj >= 0 ? "+" : ""}
-            {bid.totalAdj}%
-            {" = "}
-            {Math.round(bid.adjRate * 100)}%
-          </span>
-        </div>
-      </div>
-
-      <div
-        style={{
-          fontSize:11,
-          color:"#374151",
-          lineHeight:1.5
-        }}
-      >
-        범위: 감정가 × (조정낙찰가율 ± {Math.round(bid.std * 100)}% 표준편차)
-      </div>
-    </div>
-  );
-}
+      );
+    }
 
     function App() {
       const [url, setUrl] = useState("");
