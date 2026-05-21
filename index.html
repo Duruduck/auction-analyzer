@@ -206,9 +206,16 @@
       // ===============================
       // 📌 결과 (절대 역전 안 생김)
       // ===============================
-      const mid = Math.round(base * finalRate);
-      const low = Math.round(mid * 0.90);
+      const floor = d.minimumBidPrice || base * 0.5;
+
+      const mid = Math.max( floor, Math.round(base * finalRate));
+
+      const low = Math.max( floor,Math.round(mid * 0.92));
+
       const high = Math.round(mid * 1.10);
+      
+      
+    
       
       return { region, type, marketType, baseRate, totalAdj, adjRate, adjs, low, mid, high, std };
     }
