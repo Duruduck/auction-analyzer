@@ -732,7 +732,7 @@
   <script>
   try {
     var __src = document.getElementById('app-source').textContent.replace(/^\s*import\s[^\n]*$/gm, '');
-    var __out = Babel.transform(__src, { presets: ['react'] }).code;
+    var __out = Babel.transform(__src, { presets: [["react", { runtime: "classic" }]] }).code;
     (0, eval)(__out);
   } catch (__err) {
     document.getElementById('root').innerHTML =
