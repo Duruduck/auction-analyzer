@@ -731,7 +731,7 @@
   </script>
   <script>
   try {
-    var __src = document.getElementById('app-source').textContent;
+    var __src = document.getElementById('app-source').textContent.replace(/^\s*import\s[^\n]*$/gm, '');
     var __out = Babel.transform(__src, { presets: ['react'] }).code;
     (0, eval)(__out);
   } catch (__err) {
