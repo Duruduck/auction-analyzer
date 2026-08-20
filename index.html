@@ -15,7 +15,7 @@
 </head>
 <body>
   <div id="root"></div>
-  <script type="text/babel" data-presets="react">
+  <script type="text/plain" id="app-source">
     const { useState, useMemo } = React;
 
     // UTF-8 safe decode: 북마클릿에서 btoa(unescape(encodeURIComponent(...))) 로 인코딩
@@ -728,6 +728,21 @@
 
     const root = ReactDOM.createRoot(document.getElementById('root'));
     root.render(React.createElement(App));
+  </script>
+  <script>
+  try {
+    var __src = document.getElementById('app-source').textContent;
+    var __out = Babel.transform(__src, { presets: ['react'] }).code;
+    (0, eval)(__out);
+  } catch (__err) {
+    document.getElementById('root').innerHTML =
+      '<pre style="color:#ef4444;padding:20px;white-space:pre-wrap;font-family:monospace;font-size:13px;line-height:1.6">'
+      + '실행 오류가 발생했습니다:\n\n'
+      + (__err && __err.message ? String(__err.message).replace(/</g,'&lt;') : String(__err))
+      + (__err && __err.stack ? ('\n\n' + String(__err.stack).replace(/</g,'&lt;')) : '')
+      + '</pre>';
+    console.error(__err);
+  }
   </script>
 </body>
 </html>
